@@ -1,8 +1,13 @@
-use std::io::{self, Write, stdout};
+use std::fmt::write;
+use std::io::{self, Write, stdout, BufWriter};
+use std::time::{Duration, Instant};
+use std::thread;
+use std::sync::{Arc,atomic::{AtomicBool,Ordering}};
 use termion::event::Key;
 use termion::input::TermRead;
-use termion::{clear, cursor};
+use termion::{clear, cursor, style};
 use termion::{event::Event, raw::IntoRawMode};
+use std::fs::File;
 
 struct Editor {
     lines: Vec<String>,
@@ -84,6 +89,18 @@ impl Editor {
         }
     }
 
+    fn write_file(&self) -> io::Result<()>{
+        let file = File::create("output.txt")?;
+        let mut writer = BufWriter::new(file);
+        
+        for line in &self.lines {
+            writeln!(writer,"{}",line);
+        }
+        writer.flush()?;
+        Ok(())
+        
+    }
+
     fn draw<W: Write>(&self, stdout: &mut W) -> io::Result<()> {
         write!(stdout, "{}{}", clear::All, cursor::Goto(1, 1))?;
 
@@ -98,16 +115,29 @@ impl Editor {
             termion::style::Invert,
             self.cursor_y + 1,
             self.lines.len(),
-            self.cursor_x + 1
+            self.cursor_x + 1,
         )?;
+
+        write!(stdout,"{}",style::Reset)?;
+
+        write!(
+            stdout,
+            "{}{}",
+            cursor::Goto((self.cursor_x + 1) as u16,(self.cursor_y + 1) as u16),
+            cursor::Show
+        )?;
+    
         stdout.flush()
     }
 
+
+   
     fn run(&mut self) -> io::Result<()> {
         let stdin = io::stdin();
         let mut stdout = stdout().into_raw_mode()?;
-
+    
         self.draw(&mut stdout)?;
+        
 
         for evt in stdin.events() {
             match evt? {
@@ -115,6 +145,8 @@ impl Editor {
                 Event::Key(Key::Char('\n')) => self.insert_new_line(),
                 Event::Key(Key::Char(c)) => self.insert_char(c),
                 Event::Key(Key::Backspace) => self.delete_char(),
+                Event::Key(Key::Ctrl('s')) => self.write_file()?,
+                Event::Key(Key::Ctrl('w')) => { self.write_file()?; break}
                 Event::Key(key @ Key::Up)
                 | Event::Key(key @ Key::Down)
                 | Event::Key(key @ Key::Left)
@@ -123,6 +155,8 @@ impl Editor {
             }
 
             self.draw(&mut stdout)?;
+
+          
         }
         write!(stdout, "{}", clear::All)?;
         Ok(())
