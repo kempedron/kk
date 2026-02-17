@@ -32,20 +32,21 @@ impl Editor {
 
     fn insert_char(&mut self, c: char) {
         let line = &mut self.lines[self.cursor_y];
-               
-        line.insert(self.cursor_x, c);
+        let byte_ind = line.char_indices().nth(self.cursor_x).map(|(i,_)|i).unwrap_or(line.len());
+        line.insert(byte_ind, c);
         self.cursor_x += 1;
     }
 
     fn delete_char(&mut self) {
         if self.cursor_x > 0 {
             let line = &mut self.lines[self.cursor_y];
-            line.remove(self.cursor_x - 1);
+            let byte_ind = line.char_indices().nth(self.cursor_x - 1).map(|(i,_)|i).unwrap_or(0);
+            line.remove(byte_ind);
             self.cursor_x -= 1;
         } else if self.cursor_y > 0 {
             let current_line = self.lines.remove(self.cursor_y);
             self.cursor_y -= 1;
-            self.cursor_x = self.lines[self.cursor_y].len();
+            self.cursor_x = self.lines[self.cursor_y].chars().count();
             self.lines[self.cursor_y].push_str(&current_line);
         }
     }
@@ -63,9 +64,9 @@ impl Editor {
     fn move_cursor(&mut self, key: Key) {
         match key {
             Key::Up => {
-                if self.cursor_y + 1 < self.lines.len() && self.cursor_y > 0 {
+                if self.cursor_y > 0 {
                     self.cursor_y -= 1;
-                    let line_len = self.lines[self.cursor_y].len();
+                    let line_len = self.lines[self.cursor_y].chars().count();
                     if self.cursor_x > line_len {
                         self.cursor_x = line_len;
                     }
@@ -75,21 +76,21 @@ impl Editor {
                 if self.cursor_y + 1 < self.lines.len() {
                     println!("1");
                     self.cursor_y += 1;
-                    let line_len = self.lines[self.cursor_y].len();
+                    let line_len = self.lines[self.cursor_y].chars().count();
                     if self.cursor_x > line_len {
                         self.cursor_x = line_len;
                     }
                 }
             }
             Key::Right => {
-                if self.cursor_x + 1 < self.lines[self.cursor_y].len() {
-                    if self.cursor_x < self.lines[self.cursor_y].len() {
+                if self.cursor_x < self.lines[self.cursor_y].chars().count(){
                         self.cursor_x += 1;
-                    } else {
+                    } else if self.cursor_y + 1 < self.lines.len() {
                         self.cursor_x = 0;
                         self.cursor_y += 1;
                     }
-                }
+            
+                
             }
             Key::Left => {
                 if self.cursor_x > 0 {
