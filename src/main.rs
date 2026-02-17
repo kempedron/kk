@@ -26,13 +26,17 @@ impl Editor {
             lines: vec![String::new()],
             cursor_x: 0,
             cursor_y: 0,
-            is_redacted:false
+            is_redacted: false,
         }
     }
 
     fn insert_char(&mut self, c: char) {
         let line = &mut self.lines[self.cursor_y];
-        let byte_ind = line.char_indices().nth(self.cursor_x).map(|(i,_)|i).unwrap_or(line.len());
+        let byte_ind = line
+            .char_indices()
+            .nth(self.cursor_x)
+            .map(|(i, _)| i)
+            .unwrap_or(line.len());
         line.insert(byte_ind, c);
         self.cursor_x += 1;
     }
@@ -40,7 +44,11 @@ impl Editor {
     fn delete_char(&mut self) {
         if self.cursor_x > 0 {
             let line = &mut self.lines[self.cursor_y];
-            let byte_ind = line.char_indices().nth(self.cursor_x - 1).map(|(i,_)|i).unwrap_or(0);
+            let byte_ind = line
+                .char_indices()
+                .nth(self.cursor_x - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
             line.remove(byte_ind);
             self.cursor_x -= 1;
         } else if self.cursor_y > 0 {
@@ -83,29 +91,27 @@ impl Editor {
                 }
             }
             Key::Right => {
-                if self.cursor_x < self.lines[self.cursor_y].chars().count(){
-                        self.cursor_x += 1;
-                    } else if self.cursor_y + 1 < self.lines.len() {
-                        self.cursor_x = 0;
-                        self.cursor_y += 1;
-                    }
-            
-                
+                if self.cursor_x < self.lines[self.cursor_y].chars().count() {
+                    self.cursor_x += 1;
+                } else if self.cursor_y + 1 < self.lines.len() {
+                    self.cursor_x = 0;
+                    self.cursor_y += 1;
+                }
             }
             Key::Left => {
                 if self.cursor_x > 0 {
                     self.cursor_x -= 1;
-                } else if self.cursor_y > 0{
+                } else if self.cursor_y > 0 {
                     self.cursor_y -= 1;
                     self.cursor_x = self.lines[self.cursor_y].len()
-                }        
+                }
             }
 
             _ => todo!(),
         }
     }
 
-    fn write_file(&self, filename: &String) -> io::Result<()> {
+    fn write_file(& mut self, filename: &String) -> io::Result<()> {
         let file = File::create(format!("{}", filename))?;
         let mut writer = BufWriter::new(file);
 
@@ -113,6 +119,7 @@ impl Editor {
             writeln!(writer, "{}", line);
         }
         writer.flush()?;
+        self.is_redacted = false;
         Ok(())
     }
 
@@ -127,20 +134,20 @@ impl Editor {
                 },
                 cursor_x: 0,
                 cursor_y: 0,
-                is_redacted:false
+                is_redacted: false,
             }
         } else {
             Editor::new()
         }
     }
 
-    fn confirm<W:Write>(&self,stdout: &mut W,message: &str) -> io::Result<bool>{
-        let (_,height) = termion::terminal_size()?;
+    fn confirm<W: Write>(&self, stdout: &mut W, message: &str) -> io::Result<bool> {
+        let (_, height) = termion::terminal_size()?;
 
         write!(
             stdout,
             "{}{}{} (Y/n): {}",
-            cursor::Goto(1,height),
+            cursor::Goto(1, height),
             style::Invert,
             message,
             style::Reset,
@@ -148,8 +155,8 @@ impl Editor {
         stdout.flush()?;
 
         let stdin = io::stdin();
-        for evt in stdin.events(){
-            match evt?{
+        for evt in stdin.events() {
+            match evt? {
                 Event::Key(Key::Char('y')) | Event::Key(Key::Char('Y')) => return Ok(true),
                 Event::Key(Key::Char('n')) | Event::Key(Key::Char('N')) => return Ok(false),
                 _ => {}
@@ -197,17 +204,16 @@ impl Editor {
         for evt in stdin.events() {
             match evt? {
                 Event::Key(Key::Ctrl('q')) => {
-                    if self.is_redacted{
-                        let save =  self.confirm(& mut stdout,"Save changes?(Y/n):")?;
-                        if save{
-                            self.write_file(filename)?; 
-                        } 
+                    if self.is_redacted {
+                        let save = self.confirm(&mut stdout, "Save changes?(Y/n):")?;
+                        if save {
+                            self.write_file(filename)?;
+                        }
                         break;
-                        
                     } else {
                         break;
                     }
-                },
+                }
                 Event::Key(Key::Char('\n')) => self.insert_new_line(),
                 Event::Key(Key::Char(c)) => self.insert_char(c),
                 Event::Key(Key::Backspace) => self.delete_char(),
