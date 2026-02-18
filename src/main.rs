@@ -15,11 +15,14 @@ use termion::event::Key;
 use termion::input::TermRead;
 use termion::{clear, cursor, style};
 use termion::{event::Event, raw::IntoRawMode};
+use termion::color;
 
 struct Editor {
     lines: Vec<String>,
     cursor_x: usize,
     cursor_y: usize,
+    row_offset:usize,
+    col_offset:usize,
     is_changed: bool,
 }
 
@@ -29,7 +32,32 @@ impl Editor {
             lines: vec![String::new()],
             cursor_x: 0,
             cursor_y: 0,
+            row_offset:0,
+            col_offset:0,
             is_changed: false,
+        }
+    }
+
+    fn scroll(&mut self) {
+        let (width,height) = termion::terminal_size().unwrap();
+        
+        let visible_height = (height - 1) as usize;
+        let visible_width = width as usize;
+
+        if self.cursor_y < self.row_offset{
+            self.row_offset = self.cursor_y;
+        }
+
+        if self.cursor_y >= self.row_offset + visible_height {
+            self.row_offset = self.cursor_y - visible_height + 1;
+        }
+
+        if self.cursor_x < self.col_offset {
+            self.col_offset = self.cursor_x;
+        }
+
+        if self.cursor_x >= self.col_offset + visible_width {
+            self.col_offset = self.cursor_x - visible_width + 1;
         }
     }
 
@@ -147,6 +175,8 @@ impl Editor {
                 },
                 cursor_x: 0,
                 cursor_y: 0,
+                row_offset:0,
+                col_offset:0,
                 is_changed: false,
             }
         } else {
@@ -179,12 +209,24 @@ impl Editor {
     }
 
     fn draw<W: Write>(&self, stdout: &mut W) -> io::Result<()> {
-        write!(stdout, "{}{}", clear::All, cursor::Goto(1, 1))?;
+        
+        let bg_color = color::Bg(color::Rgb(30,30,45));
+        let fg_color = color::Fg(color::Rgb(200,200,200));
+        write!(stdout,"{}{}{}",style::Reset,clear::All,cursor::Goto(1,1));
 
-        for (i, line) in self.lines.iter().enumerate() {
-            write!(stdout, "{}{}\r\n", cursor::Goto(1, i as u16 + 1), line)?;
+        let (width,height) = termion::terminal_size()?;
+        let visible_height = (height - 1) as usize;
+
+
+        for i in 0..visible_height{
+            let file_row = i + self.row_offset;
+            if file_row < self.lines.len(){
+                let line = &self.lines[file_row];
+                write!(stdout,"{}{}",cursor::Goto(1,i as u16 + 1),line)?;
+        
+            }
         }
-        let (_, height) = termion::terminal_size()?;
+
         write!(
             stdout,
             "{}{}Press Ctr+Q to quit | Line {}/{} Col {}",
@@ -195,22 +237,23 @@ impl Editor {
             self.cursor_x + 1,
         )?;
 
-        write!(stdout, "{}", style::Reset)?;
-
-        write!(
+       write!(
             stdout,
-            "{}{}",
-            cursor::Goto((self.cursor_x + 1) as u16, (self.cursor_y + 1) as u16),
-            cursor::Show
-        )?;
-
+           "{}{}",
+           cursor::Goto(
+               (self.cursor_x - self.col_offset + 1) as u16,
+               (self.cursor_y - self.row_offset + 1) as u16
+           ),
+           cursor::Show
+   )?;
         stdout.flush()
     }
 
     fn run(&mut self, filename: &String) -> io::Result<()> {
         let stdin = io::stdin();
         let mut stdout = stdout().into_raw_mode()?;
-
+        
+        self.scroll();
         self.draw(&mut stdout)?;
 
         for evt in stdin.events() {
@@ -221,10 +264,11 @@ impl Editor {
                         if save {
                             self.write_file(filename)?;
                         }
-                        write!(stdout, "{}\n", clear::All)?;
+                        write!(stdout,"{}{}{}\n",style::Reset,clear::All,cursor::Goto(1,1));
                         break;
                     } else {
-                        write!(stdout, "{}\n", clear::All)?;
+                        write!(stdout,"{}{}{}\n",style::Reset,clear::All,cursor::Goto(1,1));
+
                         break;
                     }
                 }
@@ -243,6 +287,8 @@ impl Editor {
                 | Event::Key(key @ Key::Right) => self.move_cursor(key),
                 _ => {}
             }
+
+            self.scroll();
 
             self.draw(&mut stdout)?;
         }
