@@ -66,10 +66,16 @@ impl Editor {
     }
 
     fn insert_new_line(&mut self) {
-        let current_line = self.lines[self.cursor_y].clone();
-        let (left, right) = current_line.split_at(self.cursor_x);
-        self.lines[self.cursor_y] = left.to_string();
-        self.lines.insert(self.cursor_y + 1, right.to_string());
+        let line = &self.lines[self.cursor_y];
+        let byte_pos = line
+            .char_indices()
+            .nth(self.cursor_x)
+            .map(|(i, _)| i)
+            .unwrap_or(line.len());
+
+        let right = line[byte_pos..].to_string();
+        self.lines[self.cursor_y].truncate(byte_pos);
+        self.lines.insert(self.cursor_y + 1, right);
 
         self.cursor_y += 1;
         self.cursor_x = 0;
@@ -110,7 +116,7 @@ impl Editor {
                     self.cursor_x -= 1;
                 } else if self.cursor_y > 0 {
                     self.cursor_y -= 1;
-                    self.cursor_x = self.lines[self.cursor_y].len()
+                    self.cursor_x = self.lines[self.cursor_y].chars().count();
                 }
             }
 
