@@ -1,7 +1,10 @@
+mod filemanager;
+
 use std::env;
 use std::fmt::write;
 use std::fs::File;
 use std::io::{self, BufWriter, Write, stdout};
+use std::path::Path;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -17,7 +20,7 @@ struct Editor {
     lines: Vec<String>,
     cursor_x: usize,
     cursor_y: usize,
-    is_redacted: bool,
+    is_changed: bool,
 }
 
 impl Editor {
@@ -26,7 +29,7 @@ impl Editor {
             lines: vec![String::new()],
             cursor_x: 0,
             cursor_y: 0,
-            is_redacted: false,
+            is_changed: false,
         }
     }
 
@@ -39,6 +42,7 @@ impl Editor {
             .unwrap_or(line.len());
         line.insert(byte_ind, c);
         self.cursor_x += 1;
+        self.is_changed = true;
     }
 
     fn delete_char(&mut self) {
@@ -51,11 +55,13 @@ impl Editor {
                 .unwrap_or(0);
             line.remove(byte_ind);
             self.cursor_x -= 1;
+            self.is_changed = true;
         } else if self.cursor_y > 0 {
             let current_line = self.lines.remove(self.cursor_y);
             self.cursor_y -= 1;
             self.cursor_x = self.lines[self.cursor_y].chars().count();
             self.lines[self.cursor_y].push_str(&current_line);
+            self.is_changed = true;
         }
     }
 
@@ -67,6 +73,7 @@ impl Editor {
 
         self.cursor_y += 1;
         self.cursor_x = 0;
+        self.is_changed = true;
     }
 
     fn move_cursor(&mut self, key: Key) {
@@ -111,7 +118,7 @@ impl Editor {
         }
     }
 
-    fn write_file(& mut self, filename: &String) -> io::Result<()> {
+    fn write_file(&mut self, filename: &String) -> io::Result<()> {
         let file = File::create(format!("{}", filename))?;
         let mut writer = BufWriter::new(file);
 
@@ -119,7 +126,7 @@ impl Editor {
             writeln!(writer, "{}", line);
         }
         writer.flush()?;
-        self.is_redacted = false;
+        self.is_changed = false;
         Ok(())
     }
 
@@ -134,7 +141,7 @@ impl Editor {
                 },
                 cursor_x: 0,
                 cursor_y: 0,
-                is_redacted: false,
+                is_changed: false,
             }
         } else {
             Editor::new()
@@ -199,18 +206,19 @@ impl Editor {
         let mut stdout = stdout().into_raw_mode()?;
 
         self.draw(&mut stdout)?;
-        self.is_redacted = true;
 
         for evt in stdin.events() {
             match evt? {
                 Event::Key(Key::Ctrl('q')) => {
-                    if self.is_redacted {
+                    if self.is_changed {
                         let save = self.confirm(&mut stdout, "Save changes?(Y/n):")?;
                         if save {
                             self.write_file(filename)?;
                         }
+                        write!(stdout, "{}\n", clear::All)?;
                         break;
                     } else {
+                        write!(stdout, "{}\n", clear::All)?;
                         break;
                     }
                 }
@@ -222,6 +230,7 @@ impl Editor {
                     self.write_file(filename)?;
                     break;
                 }
+
                 Event::Key(key @ Key::Up)
                 | Event::Key(key @ Key::Down)
                 | Event::Key(key @ Key::Left)
@@ -242,6 +251,20 @@ fn main() -> io::Result<()> {
         panic!("use kk --<filename>");
     }
     let filename = &args[1];
-    let mut editor = Editor::load_file(filename);
-    editor.run(filename)
+
+    let path = Path::new(filename.trim());
+    if path.is_dir() {
+        let mut explorer = filemanager::Explorer::new();
+        explorer.load_dir(path);
+        if let Some(selected_file) = explorer.run() {
+            let name = selected_file.to_string_lossy().to_string();
+            let mut editor = Editor::load_file(&name);
+            editor.run(&name)?;
+        }
+    } else {
+        let mut editor = Editor::load_file(filename);
+        editor.run(filename)?;
+    }
+
+    Ok(())
 }
