@@ -1,6 +1,6 @@
 # kk
 
-> Минималистичный консольный текстовый редактор для UNIX-систем, написанный на Rust.
+> Минималистичный консольный текстовый редактор для UNIX-подобных систем, написанный на Rust.
 
 ![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust)
 ![Platform](https://img.shields.io/badge/platform-UNIX-lightgrey)
