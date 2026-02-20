@@ -1,16 +1,11 @@
 mod filemanager;
+mod highlight;
 
 use std::env;
-use std::fmt::write;
 use std::fs::File;
 use std::io::{self, BufWriter, Write, stdout};
 use std::path::Path;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
-use std::thread;
-use std::time::{Duration, Instant};
+
 use termion::color::{self, Yellow};
 use termion::event::Key;
 use termion::input::TermRead;
@@ -24,10 +19,11 @@ struct Editor {
     row_offset: usize,
     col_offset: usize,
     is_changed: bool,
+    highlighter: highlight::Highlighter,
 }
 
 impl Editor {
-    fn new() -> Self {
+    fn new(filename: &str) -> Self {
         Editor {
             lines: vec![String::new()],
             cursor_x: 0,
@@ -35,6 +31,7 @@ impl Editor {
             row_offset: 0,
             col_offset: 0,
             is_changed: false,
+            highlighter: highlight::Highlighter::new(filename),
         }
     }
 
@@ -123,7 +120,6 @@ impl Editor {
             }
             Key::Down => {
                 if self.cursor_y + 1 < self.lines.len() {
-                    println!("1");
                     self.cursor_y += 1;
                     let line_len = self.lines[self.cursor_y].chars().count();
                     if self.cursor_x > line_len {
@@ -157,7 +153,7 @@ impl Editor {
         let mut writer = BufWriter::new(file);
 
         for line in &self.lines {
-            writeln!(writer, "{}", line);
+            writeln!(writer, "{}", line)?;
         }
         writer.flush()?;
         self.is_changed = false;
@@ -178,9 +174,10 @@ impl Editor {
                 row_offset: 0,
                 col_offset: 0,
                 is_changed: false,
+                highlighter: highlight::Highlighter::new(filename),
             }
         } else {
-            Editor::new()
+            Editor::new(filename)
         }
     }
 
@@ -208,25 +205,31 @@ impl Editor {
         Ok(false)
     }
 
-    fn draw<W: Write>(&self, stdout: &mut W) -> io::Result<()> {
+    fn draw<W: Write>(&self, stdout: &mut W, highlighted: &[String]) -> io::Result<()> {
         write!(
             stdout,
-            "{}{}{}{}",
+            "{}{}{}",
+            cursor::Hide,
             style::Reset,
-            color::Bg(color::Rgb(40, 42, 54)), // установить чёрный фон
-            clear::All,              // залить им весь экран
-            cursor::Goto(1, 1)       // вернуть курсор в начало
+            color::Bg(color::Rgb(40, 42, 54))
         )?;
 
-       
         let (width, height) = termion::terminal_size()?;
         let visible_height = (height - 1) as usize;
 
         for i in 0..visible_height {
             let file_row = i + self.row_offset;
-            if file_row < self.lines.len() {
-                let line = &self.lines[file_row];
-                write!(stdout, "{}{}{}", cursor::Goto(1, i as u16 + 1), color::Fg(color::Rgb(248, 248, 242)), line)?;
+
+            write!(
+                stdout,
+                "{}{}{}",
+                cursor::Goto(1, i as u16 + 1),
+                color::Bg(color::Rgb(40, 42, 54)),
+                clear::CurrentLine
+            )?;
+
+            if file_row < highlighted.len() {
+                write!(stdout, "{}{}", highlighted[file_row], style::Reset)?;
             }
         }
 
@@ -256,9 +259,9 @@ impl Editor {
     fn run(&mut self, filename: &String) -> io::Result<()> {
         let stdin = io::stdin();
         let mut stdout = stdout().into_raw_mode()?;
-
+        let highlighted = self.highlighter.highlight_all(&self.lines);
         self.scroll();
-        self.draw(&mut stdout)?;
+        self.draw(&mut stdout, &highlighted)?;
 
         for evt in stdin.events() {
             match evt? {
@@ -274,7 +277,7 @@ impl Editor {
                             style::Reset,
                             clear::All,
                             cursor::Goto(1, 1)
-                        );
+                        )?;
                         break;
                     } else {
                         write!(
@@ -283,7 +286,7 @@ impl Editor {
                             style::Reset,
                             clear::All,
                             cursor::Goto(1, 1)
-                        );
+                        )?;
 
                         break;
                     }
@@ -305,8 +308,8 @@ impl Editor {
             }
 
             self.scroll();
-
-            self.draw(&mut stdout)?;
+            let highlighted = self.highlighter.highlight_all(&self.lines);
+            self.draw(&mut stdout, &highlighted)?;
         }
         write!(stdout, "{}", clear::All)?;
         Ok(())

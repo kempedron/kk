@@ -6,3 +6,7 @@ edition = "2024"
 [dependencies]
 termion = "4.0.6"
 crossterm = "0.29.0"
+syntect = { version = "5.3.0", default-features = false, features = ["default-onig"] } 
+
+two-face = "0.5.1"
+
