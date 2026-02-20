@@ -214,7 +214,7 @@ impl Editor {
             color::Bg(color::Rgb(40, 42, 54))
         )?;
 
-        let (width, height) = termion::terminal_size()?;
+        let (_,height) = termion::terminal_size()?;
         let visible_height = (height - 1) as usize;
 
         for i in 0..visible_height {

@@ -1,17 +1,19 @@
-use crossterm::{
-    cursor, execute, queue,
-    style::{Color, Print, ResetColor, SetForegroundColor},
-    terminal,
-};
 use std::fs;
 use std::io::{Write, stdout};
 use std::path::{Path, PathBuf};
+use termion::{color, screen};
+use termion::event::Key;
+use termion::input::TermRead;
+use termion::{clear, cursor, style};
+use termion::raw::IntoRawMode;
+
 
 #[derive(Debug, Clone)]
 
 pub struct DirEntry {
     pub name: String,
     pub path: PathBuf,
+
     pub is_dir: bool,
 }
 
@@ -20,6 +22,7 @@ pub struct Explorer {
     pub entries: Vec<DirEntry>,
     pub selected: usize,
     pub is_open: bool,
+    pub scroll_offset: usize,
 }
 
 impl Explorer {
@@ -30,6 +33,7 @@ impl Explorer {
             selected: 0,
             is_open: false,
             current_dir: cwd.clone(),
+            scroll_offset: 0,
         };
         explorer.load_dir(&cwd);
         explorer
@@ -37,6 +41,7 @@ impl Explorer {
 
     pub fn load_dir(&mut self, path: &Path) {
         self.entries.clear();
+        self.scroll_offset = 0;
         self.selected = 0;
 
         let path = path.canonicalize().unwrap_or(path.to_path_buf());
@@ -92,105 +97,137 @@ impl Explorer {
         }
     }
 
-    pub fn render(&mut self, start_col: u16, start_row: u16, height: u16) {
-        let mut stdout = stdout();
+    pub fn update_scroll(&mut self,visible_count: usize){
+        if self.selected < self.scroll_offset{
+            self.scroll_offset = self.selected;
+        }
 
-        queue!(
-            stdout,
-            cursor::MoveTo(start_col, start_row),
-            SetForegroundColor(Color::Cyan),
-            Print(format!("{}", self.current_dir.display())),
-            ResetColor,
-        )
-        .unwrap();
+        if self.selected >= self.scroll_offset + visible_count{
+            self.scroll_offset = self.selected - visible_count + 1;
+        }
+    }
 
-        let visible: Vec<_> = self
-            .entries
-            .iter()
+    
+
+pub fn render<W: Write>(&self, stdout: &mut W, height: u16) {
+    write!(
+        stdout,
+        "{}{}{}{}{}",
+        cursor::Goto(1, 1),
+        color::Bg(color::Black),
+        color::Fg(color::Yellow),
+        self.current_dir.display(),
+        style::Reset,
+    ).unwrap();
+
+    let visible_count = (height as usize).saturating_sub(2);
+
+
+        for (i, entry) in self.entries.iter()
             .enumerate()
-            .skip(0)
-            .take(height as usize - 1)
-            .collect();
+            .skip(self.scroll_offset)
+            .take(visible_count)
+        {
+            let row = 2 + (i -self.scroll_offset) as u16;
+            let is_select = i == self.selected;
+            let icon = if entry.is_dir {"📁 "} else {"📄 "};
+            let arrow = if is_select {"> "} else {" "};
 
-        for (i, (ind, entry)) in visible.iter().enumerate() {
-            let row = start_row + 1 + i as u16;
-            let is_selected = *ind == self.selected;
-            queue!(stdout, cursor::MoveTo(start_col, row)).unwrap();
+            if is_select {
+            write!(stdout, "{}{}{}{}{}{}{}",
+                cursor::Goto(1, row),
+                color::Bg(color::Rgb(60, 60, 60)),
+                color::Fg(color::Yellow),
+                clear::CurrentLine,
+                arrow, icon, entry.name,
+            ).unwrap();
+        } else if entry.is_dir {
+            write!(stdout, "{}{}{}{}{}{}",
+                cursor::Goto(1, row),
+                color::Bg(color::Black),
+                color::Fg(color::Yellow),
+                arrow, icon, entry.name,
+            ).unwrap();
+        } else {
+            write!(stdout, "{}{}{}{}{}{}",
+                cursor::Goto(1, row),
+                color::Bg(color::Black),
+                color::Fg(color::White),
+                arrow, icon, entry.name,
+            ).unwrap();
+        }        
+       let total = self.entries.len();
+        write!(stdout, "{}{}{}  {}/{}  {}",
+            cursor::Goto(1, height),
+            color::Bg(color::Black),
+            color::Fg(color::Yellow),
+            self.selected + 1,
+            total,
+            style::Reset,
+        ).unwrap();
 
-            if is_selected {
-                queue!(stdout, SetForegroundColor(Color::Black)).unwrap();
-            }
-            let icon = if entry.is_dir { "📁" } else { "📄" };
-            let color = if entry.is_dir {
-                Color::Blue
-            } else {
-                Color::White
-            };
-            let arrow = if is_selected { ">" } else { " " };
-
-            queue!(
-                stdout,
-                SetForegroundColor(color),
-                Print(format!("{}{}{}", arrow, icon, entry.name)),
-                ResetColor,
-            )
-            .unwrap();
-        }
-        stdout.flush().unwrap();
+        write!(stdout, "{}", style::Reset).unwrap();
     }
 
-    pub fn run(&mut self) -> Option<PathBuf> {
-        let mut stdout = stdout();
-        terminal::enable_raw_mode().unwrap();
-        execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide).unwrap();
-
-        loop {
-            let (_, height) = terminal::size().unwrap();
-            execute!(
-                stdout,
-                terminal::Clear(terminal::ClearType::All),
-                Print("\n")
-            )
-            .ok();
-            self.render(0, 0, height);
-
-            if let Ok(event) = crossterm::event::read() {
-                match event {
-                    crossterm::event::Event::Key(key) => match (key.modifiers, key.code) {
-                        (_, crossterm::event::KeyCode::Up) => self.move_up(),
-                        (_, crossterm::event::KeyCode::Down) => self.move_down(),
-                        (_, crossterm::event::KeyCode::Enter) => {
-                            if let Some(filepath) = self.enter() {
-                                terminal::disable_raw_mode().unwrap();
-                                execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show)
-                                    .unwrap();
-                                return Some(filepath);
-                            }
-                        }
-                        (
-                            crossterm::event::KeyModifiers::CONTROL,
-                            crossterm::event::KeyCode::Char('q'),
-                        ) => {
-                            break;
-                        }
-                        (
-                            crossterm::event::KeyModifiers::CONTROL,
-                            crossterm::event::KeyCode::Char('d'),
-                        ) => {
-                            if let Some(parent) = self.current_dir.parent() {
-                                let parent = parent.to_path_buf();
-                                self.load_dir(&parent);
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-        }
-
-        terminal::disable_raw_mode().unwrap();
-        execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show).unwrap();
-        None
-    }
+    stdout.flush().unwrap();
 }
+
+    pub fn run(&mut self) -> Option<PathBuf>{
+        let stdin = std::io::stdin();
+        let mut stdout = stdout().into_raw_mode().unwrap();
+
+        write!(
+        stdout,
+        "{}{}{}",
+        cursor::Hide,
+        color::Bg(color::Black),
+        clear::All,
+    ).unwrap();
+    stdout.flush().unwrap();
+
+    let (_,height) = termion::terminal_size().unwrap();
+    self.render(&mut stdout,height);
+    
+    for key in stdin.keys(){
+            let (_,height) = termion::terminal_size().unwrap();
+            let visible_count = (height as usize).saturating_sub(2); 
+
+            match key.unwrap() {
+                Key::Up => {
+                    self.move_up();
+                    self.update_scroll(visible_count);
+                }
+                Key::Down => {
+                    self.move_down();
+                    self.update_scroll(visible_count);
+                }
+                Key::Char('\n') => {
+                    if let Some(filepath) = self.enter(){
+                        write!(stdout,"{}{}{}",style::Reset,clear::All,cursor::Show).unwrap();
+                        stdout.flush().unwrap();
+                        drop(stdout);
+                        return Some(filepath); 
+                    }
+                    self.update_scroll(visible_count);
+                }
+                Key::Ctrl('q') => {
+                    write!(stdout,"{}{}{}",style::Reset,clear::All,cursor::Show).unwrap();
+                    break;
+                },
+            Key::Ctrl('d') => {
+                    if let Some(parent_dir) = self.current_dir.parent(){
+                        let parent_dir = parent_dir.to_path_buf();
+                        self.load_dir(&parent_dir);
+                    }
+                }
+                _ => {}
+            }
+            write!(stdout,"{}{}",color::Bg(color::Black),clear::All).unwrap();
+            self.render(&mut stdout,height); 
+        }  
+        write!(stdout,"{}{}{}",style::Reset,clear::All,cursor::Show).unwrap();
+        stdout.flush().unwrap();
+        None
+    } 
+}
+
