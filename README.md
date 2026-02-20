@@ -24,7 +24,8 @@
 ```bash
 git clone https://github.com/kempedron/kk
 cd kk
-sudo cp kk /usr/bin
+cargo build --release
+sudo cp target/release/kk /usr/bin
 ```
 
 ---
