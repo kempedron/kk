@@ -16,10 +16,13 @@ impl Highlighter {
     pub fn new(filename: &str) -> Self {
         let extension = filename.rsplit('.').next().unwrap_or("txt").to_string();
         let ps = two_face::syntax::extra_newlines();
-        
-        let found = ps.find_syntax_by_extension(&extension);
-        eprintln!("Extension: {}, Syntax found: {}", extension, found.map(|s| s.name.as_str()).unwrap_or("NOT FOUND"));
 
+        let found = ps.find_syntax_by_extension(&extension);
+        eprintln!(
+            "Extension: {}, Syntax found: {}",
+            extension,
+            found.map(|s| s.name.as_str()).unwrap_or("NOT FOUND")
+        );
 
         let theme = two_face::theme::extra()
             .get(EmbeddedThemeName::Dracula)
@@ -45,10 +48,11 @@ impl Highlighter {
 
             let mut colored = String::new();
             for (style, token) in ranges {
-
                 let token = token.trim_end_matches('\n');
-                if token.is_empty() { continue; }
-                
+                if token.is_empty() {
+                    continue;
+                }
+
                 let fg = style.foreground;
                 let bg = style.background;
 

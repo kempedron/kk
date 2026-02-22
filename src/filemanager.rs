@@ -1,12 +1,11 @@
 use std::fs;
 use std::io::{Write, stdout};
 use std::path::{Path, PathBuf};
-use termion::{color, screen};
 use termion::event::Key;
 use termion::input::TermRead;
-use termion::{clear, cursor, style};
 use termion::raw::IntoRawMode;
-
+use termion::{clear, cursor, style};
+use termion::{color, screen};
 
 #[derive(Debug, Clone)]
 
@@ -97,100 +96,119 @@ impl Explorer {
         }
     }
 
-    pub fn update_scroll(&mut self,visible_count: usize){
-        if self.selected < self.scroll_offset{
+    pub fn update_scroll(&mut self, visible_count: usize) {
+        if self.selected < self.scroll_offset {
             self.scroll_offset = self.selected;
         }
 
-        if self.selected >= self.scroll_offset + visible_count{
+        if self.selected >= self.scroll_offset + visible_count {
             self.scroll_offset = self.selected - visible_count + 1;
         }
     }
 
-    
+    pub fn render<W: Write>(&self, stdout: &mut W, height: u16) {
+        write!(
+            stdout,
+            "{}{}{}{}{}",
+            cursor::Goto(1, 1),
+            color::Bg(color::Black),
+            color::Fg(color::Yellow),
+            self.current_dir.display(),
+            style::Reset,
+        )
+        .unwrap();
 
-pub fn render<W: Write>(&self, stdout: &mut W, height: u16) {
-    write!(
-        stdout,
-        "{}{}{}{}{}",
-        cursor::Goto(1, 1),
-        color::Bg(color::Black),
-        color::Fg(color::Yellow),
-        self.current_dir.display(),
-        style::Reset,
-    ).unwrap();
+        let visible_count = (height as usize).saturating_sub(2);
 
-    let visible_count = (height as usize).saturating_sub(2);
-
-
-        for (i, entry) in self.entries.iter()
+        for (i, entry) in self
+            .entries
+            .iter()
             .enumerate()
             .skip(self.scroll_offset)
             .take(visible_count)
         {
-            let row = 2 + (i -self.scroll_offset) as u16;
+            let row = 2 + (i - self.scroll_offset) as u16;
             let is_select = i == self.selected;
-            let icon = if entry.is_dir {"📁 "} else {"📄 "};
-            let arrow = if is_select {"> "} else {" "};
+            let icon = if entry.is_dir { "📁 " } else { "📄 " };
+            let arrow = if is_select { "> " } else { " " };
 
             if is_select {
-            write!(stdout, "{}{}{}{}{}{}{}",
-                cursor::Goto(1, row),
-                color::Bg(color::Rgb(60, 60, 60)),
-                color::Fg(color::Yellow),
-                clear::CurrentLine,
-                arrow, icon, entry.name,
-            ).unwrap();
-        } else if entry.is_dir {
-            write!(stdout, "{}{}{}{}{}{}",
-                cursor::Goto(1, row),
+                write!(
+                    stdout,
+                    "{}{}{}{}{}{}{}",
+                    cursor::Goto(1, row),
+                    color::Bg(color::Rgb(60, 60, 60)),
+                    color::Fg(color::Yellow),
+                    clear::CurrentLine,
+                    arrow,
+                    icon,
+                    entry.name,
+                )
+                .unwrap();
+            } else if entry.is_dir {
+                write!(
+                    stdout,
+                    "{}{}{}{}{}{}",
+                    cursor::Goto(1, row),
+                    color::Bg(color::Black),
+                    color::Fg(color::Yellow),
+                    arrow,
+                    icon,
+                    entry.name,
+                )
+                .unwrap();
+            } else {
+                write!(
+                    stdout,
+                    "{}{}{}{}{}{}",
+                    cursor::Goto(1, row),
+                    color::Bg(color::Black),
+                    color::Fg(color::White),
+                    arrow,
+                    icon,
+                    entry.name,
+                )
+                .unwrap();
+            }
+            let total = self.entries.len();
+            write!(
+                stdout,
+                "{}{}{}  {}/{}  {}",
+                cursor::Goto(1, height),
                 color::Bg(color::Black),
                 color::Fg(color::Yellow),
-                arrow, icon, entry.name,
-            ).unwrap();
-        } else {
-            write!(stdout, "{}{}{}{}{}{}",
-                cursor::Goto(1, row),
-                color::Bg(color::Black),
-                color::Fg(color::White),
-                arrow, icon, entry.name,
-            ).unwrap();
-        }        
-       let total = self.entries.len();
-        write!(stdout, "{}{}{}  {}/{}  {}",
-            cursor::Goto(1, height),
-            color::Bg(color::Black),
-            color::Fg(color::Yellow),
-            self.selected + 1,
-            total,
-            style::Reset,
-        ).unwrap();
+                self.selected + 1,
+                total,
+                style::Reset,
+            )
+            .unwrap();
 
-        write!(stdout, "{}", style::Reset).unwrap();
+            write!(stdout, "{}", style::Reset).unwrap();
+        }
+
+        stdout.flush().unwrap();
     }
 
-    stdout.flush().unwrap();
-}
-
-    pub fn run(&mut self) -> Option<PathBuf>{
+    pub fn run(&mut self) -> Option<PathBuf> {
         let stdin = std::io::stdin();
         let mut stdout = stdout().into_raw_mode().unwrap();
 
         write!(
-        stdout,
-        "{}{}{}",
-        cursor::Hide,
-        color::Bg(color::Black),
-        clear::All,
-    ).unwrap();
-    stdout.flush().unwrap();
+            stdout,
+            "{}{}{}",
+            cursor::Hide,
+            color::Bg(color::Black),
+            clear::All,
+        )
+        .unwrap();
+        stdout.flush().unwrap();
 
-    let (_,height) = termion::terminal_size().unwrap();
-    self.render(&mut stdout,height);
-    
-    for key in stdin.keys(){
-            let (_,height) = termion::terminal_size().unwrap();
-            let visible_count = (height as usize).saturating_sub(2); 
+        let (_, height) = termion::terminal_size().unwrap();
+        self.render(&mut stdout, height);
+
+        for key in stdin.keys() {
+            let (_, height) = termion::terminal_size().unwrap();
+            let visible_count = (height as usize).saturating_sub(2);
 
             match key.unwrap() {
                 Key::Up => {
@@ -202,32 +220,31 @@ pub fn render<W: Write>(&self, stdout: &mut W, height: u16) {
                     self.update_scroll(visible_count);
                 }
                 Key::Char('\n') => {
-                    if let Some(filepath) = self.enter(){
-                        write!(stdout,"{}{}{}",style::Reset,clear::All,cursor::Show).unwrap();
+                    if let Some(filepath) = self.enter() {
+                        write!(stdout, "{}{}{}", style::Reset, clear::All, cursor::Show).unwrap();
                         stdout.flush().unwrap();
                         drop(stdout);
-                        return Some(filepath); 
+                        return Some(filepath);
                     }
                     self.update_scroll(visible_count);
                 }
                 Key::Ctrl('q') => {
-                    write!(stdout,"{}{}{}",style::Reset,clear::All,cursor::Show).unwrap();
+                    write!(stdout, "{}{}{}", style::Reset, clear::All, cursor::Show).unwrap();
                     break;
-                },
-            Key::Ctrl('d') => {
-                    if let Some(parent_dir) = self.current_dir.parent(){
+                }
+                Key::Ctrl('d') => {
+                    if let Some(parent_dir) = self.current_dir.parent() {
                         let parent_dir = parent_dir.to_path_buf();
                         self.load_dir(&parent_dir);
                     }
                 }
                 _ => {}
             }
-            write!(stdout,"{}{}",color::Bg(color::Black),clear::All).unwrap();
-            self.render(&mut stdout,height); 
-        }  
-        write!(stdout,"{}{}{}",style::Reset,clear::All,cursor::Show).unwrap();
+            write!(stdout, "{}{}", color::Bg(color::Black), clear::All).unwrap();
+            self.render(&mut stdout, height);
+        }
+        write!(stdout, "{}{}{}", style::Reset, clear::All, cursor::Show).unwrap();
         stdout.flush().unwrap();
         None
-    } 
+    }
 }
-

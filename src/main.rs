@@ -7,10 +7,10 @@ use std::io::{self, BufWriter, Write, stdout};
 use std::path::Path;
 
 use termion::color::{self, Yellow};
-use termion::event::Key;
-use termion::input::TermRead;
+use termion::event::{Event,Key,MouseEvent,MouseButton};
+use termion::input::{TermRead,MouseTerminal};
 use termion::{clear, cursor, style};
-use termion::{event::Event, raw::IntoRawMode};
+use termion::raw::IntoRawMode;
 
 struct Editor {
     lines: Vec<String>,
@@ -57,6 +57,44 @@ impl Editor {
             self.col_offset = self.cursor_x - visible_width + 1;
         }
     }
+
+        
+    fn scroll_for_mouse(&mut self,direction: i32, lines:usize) {
+        let total = self.lines.len();
+        let (_, height) = termion::terminal_size().unwrap();
+        let visible_height = (height - 1) as usize;
+       
+        let screen_row = self.cursor_y.saturating_sub(self.row_offset);
+        
+        if direction < 0 {
+            // sroll up
+            self.row_offset = self.row_offset.saturating_sub(lines);
+        } else if direction > 0{
+            // scroll down
+            let max_offset = total.saturating_sub(visible_height);
+            self.row_offset = (self.row_offset + lines).min(max_offset);
+        } 
+
+        self.cursor_y = (self.row_offset + screen_row).min(total - 1);
+        let line_len = self.lines[self.cursor_y].chars().count();
+        if self.cursor_x > line_len{
+            self.cursor_x = line_len;
+        }
+    }
+
+    fn mouse_click(&mut self, x:u16,y:u16){
+        let clicked_row = (y as usize -  1) + self.row_offset;
+        let cliked_col = (x as usize - 1) + self.col_offset;
+
+        if clicked_row < self.lines.len(){
+            self.cursor_y = clicked_row;
+            let line_len = self.lines[self.cursor_y].chars().count();
+            self.cursor_x = cliked_col.min(line_len);
+
+        }
+    }
+
+
 
     fn insert_char(&mut self, c: char) {
         let line = &mut self.lines[self.cursor_y];
@@ -258,7 +296,7 @@ impl Editor {
 
     fn run(&mut self, filename: &String) -> io::Result<()> {
         let stdin = io::stdin();
-        let mut stdout = stdout().into_raw_mode()?;
+        let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
         let highlighted = self.highlighter.highlight_all(&self.lines);
         self.scroll();
         self.draw(&mut stdout, &highlighted)?;
@@ -304,6 +342,13 @@ impl Editor {
                 | Event::Key(key @ Key::Down)
                 | Event::Key(key @ Key::Left)
                 | Event::Key(key @ Key::Right) => self.move_cursor(key),
+
+                Event::Mouse(me) => match me{
+                    MouseEvent::Press(MouseButton::WheelUp,_,_) => self.scroll_for_mouse(-1,3),
+                    MouseEvent::Press(MouseButton::WheelDown,_,_) => self.scroll_for_mouse(1,3),
+                    MouseEvent::Press(MouseButton::Left,x,y) => self.mouse_click(x,y),
+                    _ => {}
+                }
                 _ => {}
             }
 
